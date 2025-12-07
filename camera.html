@@ -38,6 +38,35 @@
         button:hover {
             transform: scale(1.05);
         }
+
+        .loading-video {
+            position: fixed;
+            inset: 0; /* top:0; right:0; bottom:0; left:0 */
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: 9999;
+            display: none;           /* по умолчанию скрыто */
+            background: black;
+        }
+
+        /* мягкое появление / исчезновение, по желанию */
+        .loading-video.fade-in {
+            animation: loadingFadeIn 0.4s ease forwards;
+        }
+        .loading-video.fade-out {
+            animation: loadingFadeOut 0.4s ease forwards;
+        }
+
+        @keyframes loadingFadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+        @keyframes loadingFadeOut {
+            from { opacity: 1; }
+            to   { opacity: 0; }
+        }
+
     </style>
 </head>
 <body>
@@ -110,6 +139,103 @@ async function sendToServer() {
     }
 }
 </script>
+
+<script>
+/**
+ * Показывает видео, проигрывает его и возвращает Promise,
+ * который resolve-ится, когда видео закончилось.
+ */
+function playLoadingVideo() {
+    const video = document.getElementById("loadingVideo");
+    if (!video) return Promise.resolve(); // на всякий случай
+
+    return new Promise(resolve => {
+        // сбрасываем состояние
+        video.pause();
+        video.currentTime = 0;
+        video.style.display = "block";
+        video.classList.remove("fade-out");
+        void video.offsetWidth; // хак для перезапуска анимации
+        video.classList.add("fade-in");
+
+        // слушаем окончание видео
+        const onEnded = () => {
+            video.removeEventListener("ended", onEnded);
+
+            video.classList.remove("fade-in");
+            video.classList.add("fade-out");
+
+            // чуть подождём, чтобы отыграла анимация исчезновения
+            setTimeout(() => {
+                video.style.display = "none";
+                video.classList.remove("fade-out");
+                resolve();
+            }, 300);
+        };
+
+        video.addEventListener("ended", onEnded);
+
+        // запускаем воспроизведение (на клик пользователя браузер разрешит)
+        video.play().catch(err => {
+            console.warn("Не удалось воспроизвести видео:", err);
+            // если вдруг ошибка — просто сразу скрываем и resolve
+            onEnded();
+        });
+    });
+}
+
+/**
+ * Обёртка: одновременно запускает видео и асинхронную операцию.
+ * Ждёт и конец видео, и завершение операции.
+ *
+ * usage:
+ *   await withLoadingVideo(() => fetch(...));
+ */
+async function withLoadingVideo(asyncFn) {
+    const videoPromise = playLoadingVideo();
+    const fnPromise = asyncFn();
+
+    // ждём и видео, и функцию
+    await Promise.all([videoPromise, fnPromise]);
+
+    // возвращаем результат функции (если нужно)
+    return fnPromise;
+}
+</script>
+
+<!-- ⬇ Глобальный видео-лоадер -->
+<div id="loadingVideoOverlay">
+    <video id="loadingVideo" src="loading.mp4" autoplay muted playsinline></video>
+</div>
+
+<style>
+#loadingVideoOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: black;
+    display: none;        /* скрыт по умолчанию */
+    justify-content: center;
+    align-items: center;
+    z-index: 999999;
+}
+
+#loadingVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* чтобы видео заполняло экран */
+}
+</style>
+
+<!-- Полноэкранное видео-заглушка -->
+<video id="loadingVideo"
+       class="loading-video"
+       src="loading.mp4"
+       muted
+       playsinline>
+</video>
 
 </body>
 </html>
